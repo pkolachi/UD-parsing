@@ -34,11 +34,12 @@ else
 fi
 
 function convert2conll09 {
-  sentsfile="$1";
-  taggerin="$2";
-  lexicon="$3";
+  
+  local sentsfile="$1";
+  local taggerin="$2";
+  local lexicon="$3";
 
-  cmd="${SCRIPT_DIR}/prepare_data.py totsv ${sentsfile} ${taggerin} ${lexicon}";
+  local cmd="${SCRIPT_DIR}/prepare_data.py totsv ${sentsfile} ${taggerin} ${lexicon}";
   echo $cmd >&2; 
   eval $cmd >&2;
 }
@@ -50,9 +51,10 @@ function joint_tagger {
   outfile=$4;
 
   TAGGER_JAR="${LIB_DIR}/marmot-2017-04-18.jar";
-  DEPS="${LIB_DIR}/trove-3.1a1.jar:${LIB_DIR}/mallet.jar";
+  TDEPS="${LIB_DIR}/trove-3.1a1.jar:${LIB_DIR}/mallet.jar";
 
-  cmd="java -Xmx${MEM} -classpath ${TAGGER_JAR}:${DEPS} marmot.morph.cmd.Annotator \
+  local cmd="java -Xmx${MEM} -classpath ${TAGGER_JAR}:${TDEPS} \
+         marmot.morph.cmd.Annotator \
          -model-file $m_mdlfile \
 	 -lemmatizer-file $l_mdlfile \
 	 -test-file form-index=1,token-feature-index=2,$infile \
@@ -63,14 +65,15 @@ function joint_tagger {
 }
 
 function graph_parser {
-  mdlfile=$1;
-  infile=$2;
-  outfile=$3;
+  local mdlfile=$1;
+  local infile=$2;
+  local outfile=$3;
 
   PARSER_JAR="${LIB_DIR}/anna-3.3.jar";
-  DEPS="";
+  PDEPS="";
 
-  cmd="${JAVA} -Xmx${MEM} -classpath $PARSER_JAR is2.parser.Parser \
+  local cmd="${JAVA} -Xmx${MEM} -classpath $PARSER_JAR:${PDEPS} \
+          is2.parser.Parser \
           -model $mdlfile \
 	  -test  $infile  \
 	  -out   $outfile \
@@ -80,12 +83,12 @@ function graph_parser {
 }
 
 function convert2conllu {
-  sentsfile=$1;
-  parserout=$2;
+  local sentsfile=$1;
+  local parserout=$2;
   
-  cmd="${SCRIPT_DIR}/prepare_data.py toconllu ${sentsfile} ${parserout}";
+  local cmd="${SCRIPT_DIR}/prepare_data.py toconllu ${sentsfile} ${parserout}";
   echo "$cmd" >&2; 
-  eval $cmd   >&2;
+  eval $cmd   ;
 }
 
 function add2conll09 {

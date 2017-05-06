@@ -35,43 +35,44 @@ fi
 
 function tokenize {
   TOKENIZER="${LIB_DIR}/tokenizer.perl"
-  tokfile="$1";
+  local tokfile="$1";
 
-  cmd="${TOKENIZER} -l ${LANG} > ${tokfile}";
+  local cmd="${TOKENIZER} -l ${LANG} > ${tokfile}";
   echo $cmd >&2;
   eval $cmd >&2;
 }
 
 function prepareconll {
-  tokenizedfile="$1";
-  conllfile="$2";
+  local tokenizedfile="$1";
+  local conllfile="$2";
 
-  cmd="${SCRIPT_DIR}/prepare_data.py tokenize ${tokenizedfile} ${conllfile}";
+  local cmd="${SCRIPT_DIR}/prepare_data.py tokenize ${tokenizedfile} ${conllfile}";
   echo $cmd >&2;
   eval $cmd >&2;
 }
 
 function convert2conll09 {
-  inputconllfile="$1";
-  sentsfile="$2";
-  taggerin="$3";
-  lexicon="$4";
+  local inputconllfile="$1";
+  local sentsfile="$2";
+  local taggerin="$3";
+  local lexicon="$4";
 
-  cmd="${SCRIPT_DIR}/prepare_data.py totsv2 ${inputconllfile} ${sentsfile} ${taggerin} ${lexicon}";
+  local cmd="${SCRIPT_DIR}/prepare_data.py totsv2 ${inputconllfile} ${sentsfile} ${taggerin} ${lexicon}";
   echo $cmd >&2; 
   eval $cmd >&2;
 }
 
 function joint_tagger {
-  m_mdlfile=$1;
-  l_mdlfile=$2;
-  infile=$3;
-  outfile=$4;
+  local m_mdlfile=$1;
+  local l_mdlfile=$2;
+  local infile=$3;
+  local outfile=$4;
 
   TAGGER_JAR="${LIB_DIR}/marmot-2017-04-18.jar";
-  DEPS="${LIB_DIR}/trove-3.1a1.jar:${LIB_DIR}/mallet.jar";
+  TDEPS="${LIB_DIR}/trove-3.1a1.jar:${LIB_DIR}/mallet.jar";
 
-  cmd="java -Xmx${MEM} -classpath ${TAGGER_JAR}:${DEPS} marmot.morph.cmd.Annotator \
+  local cmd="java -Xmx${MEM} -classpath ${TAGGER_JAR}:${TDEPS} \
+         marmot.morph.cmd.Annotator \
          -model-file $m_mdlfile \
 	 -lemmatizer-file $l_mdlfile \
 	 -test-file form-index=1,token-feature-index=2,$infile \
@@ -82,14 +83,15 @@ function joint_tagger {
 }
 
 function graph_parser {
-  mdlfile=$1;
-  infile=$2;
-  outfile=$3;
+  local mdlfile=$1;
+  local infile=$2;
+  local outfile=$3;
 
   PARSER_JAR="${LIB_DIR}/anna-3.3.jar";
-  DEPS="";
+  PDEPS="";
 
-  cmd="${JAVA} -Xmx${MEM} -classpath $PARSER_JAR is2.parser.Parser \
+  local cmd="${JAVA} -Xmx${MEM} -classpath $PARSER_JAR:${PDEPS} \
+          is2.parser.Parser \
           -model $mdlfile \
 	  -test  $infile  \
 	  -out   $outfile \
@@ -99,12 +101,12 @@ function graph_parser {
 }
 
 function convert2conllu {
-  sentsfile=$1;
-  parserout=$2;
+  local sentsfile=$1;
+  local parserout=$2;
   
-  cmd="${SCRIPT_DIR}/prepare_data.py toconllu ${sentsfile} ${parserout}";
+  local cmd="${SCRIPT_DIR}/prepare_data.py toconllu ${sentsfile} ${parserout}";
   echo "$cmd" >&2; 
-  eval $cmd   >&2;
+  eval $cmd   ;
 }
 
 function add2conll09 {
