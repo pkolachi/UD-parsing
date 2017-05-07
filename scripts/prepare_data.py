@@ -7,6 +7,8 @@ import itertools as it;
 import io;
 import os.path as pathutils;
 import re;
+import argparse;
+
 
 WSPAT  = re.compile('\s+', flags=re.U);
 TABPAT = re.compile('\t',  flags=re.U);
@@ -196,17 +198,20 @@ def toconll07(inputfile='', outputfile='', source=''):
 
 def toconllu(inputfile='', outputfile='', source=''):
   global FIELDS;
-  if True or FIELDS == CONLL09_COLUMNS:
+  if FIELDS == CONLL09_COLUMNS:
     systemConv = swapConllFields(['plemma', 'ppostag', 'ppostag', 'pfeats', 'phead', 'pdeprel'], ['lemma', 'postag', 'xpostag', 'feats', 'head', 'deprel'], remove=True);
     goldConv   = swapConllFields(['lemma', 'postag', 'postag', 'feats', 'head', 'deprel'], ['lemma', 'postag', 'xpostag', 'feats', 'head', 'deprel'], remove=False);
     blindConv  = swapConllFields(['plemma', 'ppostag', 'ppostag', 'pfeats'], ['lemma', 'postag', 'xpostag', 'feats'], remove=True);
+  elif FIELDS == CONLL07_COLUMNS:
+    systemConv = swapConllFields(['cpostag', 'postag'], ['postag', 'xpostag'], remove=False);
+    goldConv   = swapConllFields(['cpostag', 'postag'], ['postag', 'xpostag'], remove=False);
+    blindConv  = swapConllFields(['cpostag', 'postag'], ['postag', 'xpostag'], remove=False);
   
   transformer  = goldConv if source == 'gold' else blindCov if source == 'blind' else systemConv ;
   conll_sents  = sentences_from_conllfile(inputfile);
   nconll_sents = map(transformer, conll_sents);
   sentences_to_conllfile(outputfile, nconll_sents, fields=CONLLU_COLUMNS);
   return;
-
 
 def tokenized_to_sentences(sentences):
   global FIELDS;
@@ -255,7 +260,7 @@ def addClasses(lexicon):
     
     for edge in conll_sent:
       edge['CLASS'] = lexicon[edge['form'].lower()];
-    return conll_sent;
+    return (meta_info, conll_sent);
   return worker;
 
 def prepare_lemming_data(inputfile='', sentsfile='', outputfile='', lexicon=''):
@@ -267,7 +272,21 @@ def prepare_lemming_data(inputfile='', sentsfile='', outputfile='', lexicon=''):
   else:
     nconll_sents = conll_sents;
 
-  sentences_to_conllfile(outputfile, nconll_sents, fields=('id', 'form', 'CLASS'));
+  with smart_open(outputfile, 'w') as cfile, smart_open(sentsfile, 'w') as sfile:
+    while True:
+      buf = it.islice(nconll_sents, BUF_SIZE);
+      buf = list(buf);
+      meta_info = [item.replace('\n', '_EOS_') for (item, sent) in buf];
+      sents = [sent for (item, sent) in buf];
+      for s in meta_info:
+        print(s, file=sfile);
+      for s in sentences_to_conll(sents, fields=('id', 'form', 'CLASS')):
+        print(s, file=cfile);
+
+      if len(buf) < BUF_SIZE:
+        break;
+  
+  #sentences_to_conllfile(outputfile, nconll_sents, fields=('id', 'form', 'CLASS'));
   return;
 
 def prepare_mate_data(inputfile='', outputfile=''):
@@ -275,9 +294,15 @@ def prepare_mate_data(inputfile='', outputfile=''):
   conll_sents = sentences_from_conllfile(inputfile, fields=CONLL09_COLUMNS);
   sentences_to_conllfile(outputfile, conll_sents, fields=CONLL09_COLUMNS);
 
-def reorganize_data(inputfile='', sentsfile='', outputfile=''):
+def prepare_stanford_data(inputfile='', outputfile=''):
   global FIELDS;
   FIELDS = CONLL09_COLUMNS;
+  toconllu(inputfile, outputfile, source='system');
+  return;
+
+
+def reorganize_data(inputfile='', sentsfile='', outputfile=''):
+  global FIELDS;
   toconllu(inputfile, outputfile, source='system');
   return;
 
@@ -299,19 +324,46 @@ def prepare_conllinput(inputfile='', outputfile=''):
   sentences_to_conllfile(outputfile, conll_sents, fields=CONLLU_COLUMNS);
   return;
 
+def cmdLineParser():
+  argparser = argparse.ArgumentParser(prog='prepare_data.py', description='');
+  argparser.add_argument('-t', '--task', dest='task', required=True, help='');
+  argparser.add_argument('-i', '--input', dest='inputfile', nargs='?', default='', help='');
+  argparser.add_argument('-o', '--output', dest='outputfile', nargs='?', default='', help='');
+  argparser.add_argument('-s', '--sents', dest='sentsfile', default='', help='');
+  argparser.add_argument('-c', '--classes', dest='classesfile', default='', help='');
+  return argparser;
+
 if __name__ == '__main__':
-  if sysargv[1] == 'totsv':
-    classesfile = '' if len(sysargv) < 5 else sysargv[4];
-    prepare_lemming_data(sentsfile=sysargv[2], outputfile=sysargv[3], lexicon=classesfile);
-  elif sysargv[1] == 'totsv2':
-    classesfile = '' if len(sysargv) < 6 else sysargv[5];
-    prepare_lemming_data(inputfile=sysargv[2], sentsfile=sysargv[3], outputfile=sysargv[4], lexicon=classesfile);
-  elif sysargv[1] == 'toconllu':
-    reorganize_data(sentsfile=sysargv[2], inputfile=sysargv[3]);
-  elif sysargv[1] == 'traintagger':
-    classesfile = '' if len(sysargv) < 5 else sysargv[4];
-    prepare_lemming(inputfile=sysargv[2], outputfile=sysargv[3], lexicon=sysargv[4]);
-  elif sysargv[1] == 'prepmate':
-    prepare_mate_data(inputfile=sysargv[2], outputfile=sysargv[3]);
-  elif sysargv[1] == 'tokenize':
-    prepare_conllinput(inputfile=sysargv[2], outputfile=sysargv[3]);
+  env = cmdLineParser().parse_args(sysargv[1:]);
+  env.inputfile = '' if env.inputfile == '_NONE_' else env.inputfile;
+  env.outputfile = '' if env.outputfile == '_NONE_' else env.outputfile;
+  env.inputfile = '' if not env.inputfile else env.inputfile;
+  env.outputfile = '' if not env.outputfile else env.outputfile;
+  if env.task == 'totsv':
+    prepare_lemming_data(inputfile=env.inputfile, \
+        sentsfile=env.sentsfile, \
+        outputfile=env.outputfile, \
+        lexicon=env.classesfile);
+  elif env.task == '9toconllu':
+    FIELDS = CONLL09_COLUMNS;
+    reorganize_data(inputfile=env.inputfile, \
+        sentsfile=env.sentsfile, \
+        outputfile=env.outputfile);
+  elif env.task == '7toconllu':
+    FIELDS = CONLL07_COLUMNS;
+    reorganize_data(inputfile=env.inputfile, \
+        sentsfile=env.sentsfile, \
+        outputfile=env.outputfile);
+  elif env.task == 'traintagger':
+    prepare_lemming(inputfile=env.inputfile, \
+        outputfile=env.outputfile, \
+        lexicon=env.classesfile);
+  elif env.task == 'prepmate':
+    prepare_mate_data(inputfile=env.inputfile, \
+        outputfile=env.outputfile);
+  elif env.task == 'prepstan':
+    prepare_stanford_data(inputfile=env.inputfile, \
+        outputfile=env.outputfile);
+  elif env.task == 'tokenize':
+    prepare_conllinput(inputfile=env.inputfile, \
+        outputfile=env.outputfile);

@@ -9,60 +9,83 @@ else
   scriptdir=$(dirname "$scriptpath")
 fi
 WORK_DIR="$(cd "$scriptdir" && pwd -P)"
-source "${WORK_DIR}/PIPE_VARS.sh"
 
+source "${WORK_DIR}/PIPE_VARS.sh"
 PIPELINE_DIR="${WORK_DIR}/.."
-# mandatory variable defs PIPELINE_DIR, JAVA, MODELS_DIR
+# mandatory variable defs JAVA
 # options variables defs  CORES, MEM
 LIB_DIR="${PIPELINE_DIR}/lib"
 SCRIPT_DIR="${PIPELINE_DIR}/scripts"
 MODELS_DIR="${PIPELINE_DIR}/models/v1.4"
 
-if (( $# < 1)); then
-  echo "Error: $0 lang-code [<tmp-dir>]"
-  exit 1;
-else
-  LANG=$1;
+usage() {
+    echo "Usage: $0 -l lang-code [-i <input>] [-o <output> ] [-t <tmp-dir>]" ;
+    exit 1 ;
+}
+
+while getopts "l:i:o:t:h:" o; do
+  case "${o}" in
+    l)
+      LANG=${OPTARG} ;
+      ;;
+    t)
+      TMPDIR=${OPTARG} ;
+      ;;
+    i) 
+      INPUTFILE=${OPTARG} ;
+      ;;
+    o)
+      OUTPUTFILE=${OPTARG} ;
+      ;;
+    *)
+      usage ;
+      ;;
+  esac
+done
+if [[ -z "${LANG}" ]] ; then
+  usage ;  
+  exit 1 ;
 fi
-if (( $# >= 2)); then
-  TMP_DIR=$2;
-  if [[ ! -d "${TMP_DIR}" ]]; then
-      mkdir -p "${TMP_DIR}";
-  fi
-else
-  TMP_DIR="/tmp";
+if [[ -z "${TMPDIR}" ]] ; then
+  TMPDIR="/tmp" ;
+fi
+if [[ ! -d "${TMPDIR}" ]]; then
+    mkdir -p "${TMPDIR}";
 fi
 
-function tokenize {
+tokenize() {
   TOKENIZER="${LIB_DIR}/tokenizer.perl"
   local tokfile="$1";
 
-  local cmd="${TOKENIZER} -l ${LANG} > ${tokfile}";
+  local cmd="${TOKENIZER} -l ${LANG} -no-escape -penn > ${tokfile}";
   echo $cmd >&2;
   eval $cmd >&2;
 }
 
-function prepareconll {
+prepareconll() {
   local tokenizedfile="$1";
   local conllfile="$2";
 
-  local cmd="${SCRIPT_DIR}/prepare_data.py tokenize ${tokenizedfile} ${conllfile}";
+  local cmd="${SCRIPT_DIR}/prepare_data.py -t tokenize -i ${tokenizedfile} -o ${conllfile}";
   echo $cmd >&2;
   eval $cmd >&2;
 }
 
-function convert2conll09 {
+convert2conll09() {
   local inputconllfile="$1";
   local sentsfile="$2";
   local taggerin="$3";
   local lexicon="$4";
 
-  local cmd="${SCRIPT_DIR}/prepare_data.py totsv2 ${inputconllfile} ${sentsfile} ${taggerin} ${lexicon}";
+  local cmd="${SCRIPT_DIR}/prepare_data.py -t totsv \
+      -i ${inputconllfile} \
+      -s ${sentsfile} -o ${taggerin} \
+      -c ${lexicon}";
   echo $cmd >&2; 
   eval $cmd >&2;
 }
 
-function joint_tagger {
+joint_tagger() {
   local m_mdlfile=$1;
   local l_mdlfile=$2;
   local infile=$3;
@@ -70,62 +93,99 @@ function joint_tagger {
 
   TAGGER_JAR="${LIB_DIR}/marmot-2017-04-18.jar";
   TDEPS="${LIB_DIR}/trove-3.1a1.jar:${LIB_DIR}/mallet.jar";
-
   local cmd="java -Xmx${MEM} -classpath ${TAGGER_JAR}:${TDEPS} \
          marmot.morph.cmd.Annotator \
-         -model-file $m_mdlfile \
-	 -lemmatizer-file $l_mdlfile \
-	 -test-file form-index=1,token-feature-index=2,$infile \
-	 -pred-file $outfile";
+         -model-file ${m_mdlfile} \
+	 -lemmatizer-file ${l_mdlfile} \
+	 -test-file form-index=1,token-feature-index=2,${infile} \
+	 -pred-file ${outfile}";
   echo $cmd >&2; 
   eval $cmd >&2;
-
 }
 
-function graph_parser {
+graph_parser() {
   local mdlfile=$1;
   local infile=$2;
   local outfile=$3;
 
   PARSER_JAR="${LIB_DIR}/anna-3.3.jar";
   PDEPS="";
-
-  local cmd="${JAVA} -Xmx${MEM} -classpath $PARSER_JAR:${PDEPS} \
+  local cmd="${JAVA} -Xmx${MEM} -classpath ${PARSER_JAR}:${PDEPS} \
           is2.parser.Parser \
-          -model $mdlfile \
-	  -test  $infile  \
-	  -out   $outfile \
-	  -cores $CORES" ;  
+          -model ${mdlfile} \
+	  -test  ${infile}  \
+	  -out   ${outfile} \
+	  -cores ${CORES}" ;  
+  echo $cmd >&2;
+  eval $cmd >&2;
+}
+
+nndep_parser() {
+  local mdlfile=$1;
+  local infile=$2;
+  local outfile=$3;
+
+  PARSER_JAR="${LIB_DIR}/stanford-corenlp-3.7.0.jar";
+  PDEPS="";
+  local cmd="${JAVA} -Xmx${MEM} -classpath ${PARSER_JAR}:${PDEPS} \
+          edu.stanford.nlp.parser.nndep.DependencyParser \
+	  -model ${mdlfile} \
+	  -threads ${CORES} \
+	  -testFile ${infile} \
+	  -outFile ${outfile}" ;
+  echo $cmd >&2;
+  eval $cmd >&2;
+}
+
+add2conll09() {
+  local taggerout=$1;
+  local parserin=$2; 
+
+  local cmd="${SCRIPT_DIR}/prepare_data.py -t prepmate \
+      -i ${taggerout} \
+      -o ${parserin}";
+  echo "$cmd" >&2; 
+  eval $cmd   >&2;
+}
+
+getconll07() {
+  local taggerout=$1;
+  local parserin=$2;
+
+  local cmd="${SCRIPT_DIR}/prepare_data.py -t prepstan \
+      -i ${taggerout} -o ${parserin}" ;
   echo "$cmd" >&2;
   eval $cmd   >&2;
 }
 
-function convert2conllu {
+convert092conllu() {
   local sentsfile=$1;
   local parserout=$2;
   
-  local cmd="${SCRIPT_DIR}/prepare_data.py toconllu ${sentsfile} ${parserout}";
+  local cmd="${SCRIPT_DIR}/prepare_data.py -t 9toconllu \
+      -i ${parserout} -s ${sentsfile} -o ${OUTPUTFILE}";
   echo "$cmd" >&2; 
   eval $cmd   ;
 }
 
-function add2conll09 {
-  taggerout=$1;
-  parserin=$2; 
-
-  cmd="${SCRIPT_DIR}/prepare_data.py prepmate ${taggerout} ${parserin}";
+convert072conllu() {
+  local sentsfile=$1;
+  local parserout=$2;
+  
+  local cmd="${SCRIPT_DIR}/prepare_data.py -t 7toconllu \
+      -i ${parserout} -s ${sentsfile} -o ${OUTPUTFILE}";
   echo "$cmd" >&2; 
-  eval $cmd   >&2;
+  eval $cmd   ;
 }
 
-function remove_tmp {
+remove_tmp() {
   for scratchfile in "$@"
   do
-      if [[ -f "${scratchfile}" ]]; then
-	  cmd="rm -v ${scratchfile}";
-	  echo "$cmd" >&2;
-	  eval $cmd   >&2;
-      fi
+    if [[ -f "${scratchfile}" ]]; then
+      cmd="rm -v ${scratchfile}";
+      echo "$cmd" >&2;
+      eval $cmd   >&2;
+    fi
   done
 }
 
@@ -134,27 +194,75 @@ MODEL_DIR="${MODELS_DIR}/${LANG}"
 source ${MODEL_DIR}/lang.sh  # this defines all necessary variables for language. 
 # mandatory variable defs MDL_MTAGGER, MDL_LTAGGER, MDL_GPARSER, MDL_ABBREVS
 # options variables defs  MDL_LEXICON
-MDL_MTAGGER="${MODEL_DIR}/${MDL_MTAGGER}";
-MDL_LTAGGER="${MODEL_DIR}/${MDL_LTAGGER}";
-MDL_GPARSER="${MODEL_DIR}/${MDL_GPARSER}";
-MDL_CLASSES="${MODEL_DIR}/${MDL_CLASSES}";
-MDL_ABBREVS="${MODEL_DIR}/${MDL_ABBREVS}";
 
 # -- temporary storage for stages in the pipeline ;
-TMP_PREFIX="${TMP_DIR}/$$"
+TMP_PREFIX="${TMPDIR}/$$"
 TMP_TOKFILE="${TMP_PREFIX}.tok.txt";
 TMP_INFILE="${TMP_PREFIX}.tok.conllu";
 TMP_SENTSFILE="${TMP_PREFIX}.tok.sents";
 TMP_TAGGERINFILE="${TMP_PREFIX}.taginp.tsv" ;
 TMP_TAGGEDFILE="${TMP_PREFIX}.tagged.conll09";
-TMP_PARSERINFILE="${TMP_PREFIX}.parsinp.conll09";
-TMP_PARSEDFILE="${TMP_PREFIX}.parsed.conll09";
 
-tokenize        $TMP_TOKFILE;
-prepareconll    $TMP_TOKFILE $TMP_INFILE;
-convert2conll09 $TMP_INFILE $TMP_SENTSFILE $TMP_TAGGERINFILE $MDL_CLASSES;
-joint_tagger    $MDL_MTAGGER $MDL_LTAGGER $TMP_TAGGERINFILE $TMP_TAGGEDFILE ;
-add2conll09     $TMP_TAGGEDFILE $TMP_PARSERINFILE ;
-graph_parser    $MDL_GPARSER $TMP_PARSERINFILE $TMP_PARSEDFILE ;
-convert2conllu  $TMP_SENTSFILE $TMP_PARSEDFILE ;
-remove_tmp      $TMP_TOKFILE $TMP_INFILE $TMP_SENTSFILE $TMP_TAGGERINFILE $TMP_TAGGEDFILE $TMP_PARSERINFILE $TMP_PARSEDFILE ;
+function PIPE1 {
+  if [[ -z ${MDL_MTAGGER} || -z ${MDL_LTAGGER} ]]; then
+      echo "Models not found for lemmatizer and morph tagger";
+      echo "Check definitions in ${MODEL_DIR}/lang.sh";
+      exit 1 ;
+  fi
+  if [[ -z ${MDL_GPARSER} ]]; then
+      echo "Parsing model not found";
+      echo "Check definitions in ${MODEL_DIR}/lang.sh";
+      exit 1 ;
+  fi
+  MDL_MTAGGER="${MODEL_DIR}/${MDL_MTAGGER}";
+  MDL_LTAGGER="${MODEL_DIR}/${MDL_LTAGGER}";
+  MDL_GPARSER="${MODEL_DIR}/${MDL_GPARSER}";
+  MDL_CLASSES="${MODEL_DIR}/${MDL_CLASSES}";
+  MDL_ABBREVS="${MODEL_DIR}/${MDL_ABBREVS}";
+
+  local TMP_PARSERINFILE="${TMP_PREFIX}.parsinp.conll09";
+  local TMP_PARSEDFILE="${TMP_PREFIX}.parsed.conll09";
+  tokenize        $TMP_TOKFILE ;
+  prepareconll    $TMP_TOKFILE $TMP_INFILE ;
+  convert2conll09 $TMP_INFILE $TMP_SENTSFILE $TMP_TAGGERINFILE $MDL_CLASSES ;
+  joint_tagger    $MDL_MTAGGER $MDL_LTAGGER $TMP_TAGGERINFILE $TMP_TAGGEDFILE ;
+  add2conll09     $TMP_TAGGEDFILE $TMP_PARSERINFILE ;
+  graph_parser    $MDL_GPARSER $TMP_PARSERINFILE $TMP_PARSEDFILE ;
+  convert092conllu  $TMP_SENTSFILE $TMP_PARSEDFILE ;
+  remove_tmp      $TMP_TOKFILE $TMP_INFILE $TMP_SENTSFILE $TMP_TAGGERINFILE $TMP_TAGGEDFILE $TMP_PARSERINFILE $TMP_PARSEDFILE ;
+}
+
+function PIPE2 {
+  if [[ -z ${MDL_MTAGGER} || -z ${MDL_LTAGGER} ]]; then
+      echo "Models not found for lemmatizer and morph tagger";
+      echo "Check definitions in ${MODEL_DIR}/lang.sh";
+      exit 1 ;
+  fi
+  if [[ -z ${MDL_NPARSER} ]]; then
+      echo "Parsing model not found";
+      echo "Check definitions in ${MODEL_DIR}/lang.sh";
+      exit 1 ;
+  fi
+  MDL_MTAGGER="${MODEL_DIR}/${MDL_MTAGGER}";
+  MDL_LTAGGER="${MODEL_DIR}/${MDL_LTAGGER}";
+  MDL_NPARSER="${MODEL_DIR}/${MDL_NPARSER}";
+  MDL_CLASSES="${MODEL_DIR}/${MDL_CLASSES}";
+  MDL_ABBREVS="${MODEL_DIR}/${MDL_ABBREVS}";
+
+  local TMP_PARSER09INFILE="${TMP_PREFIX}.parsinp.conll09";
+  local TMP_PARSER07INFILE="${TMP_PREFIX}.parsinp.conll07";
+  local TMP_PARSEDFILE="${TMP_PREFIX}.parsed.conll07";
+  tokenize        $TMP_TOKFILE ;
+  prepareconll    $TMP_TOKFILE $TMP_INFILE ;
+  convert2conll09 $TMP_INFILE $TMP_SENTSFILE $TMP_TAGGERINFILE $MDL_CLASSES ;
+  joint_tagger    $MDL_MTAGGER $MDL_LTAGGER $TMP_TAGGERINFILE $TMP_TAGGEDFILE ;
+  add2conll09     $TMP_TAGGEDFILE $TMP_PARSERINFILE ;
+  getconll07      $TMP_PARSER09INFILE $TMP_PARSER07INFILE ;
+  nndep_parser    $MDL_NPARSER $TMP_PARSER07INFILE $TMP_PARSEDFILE ;
+  convert072conllu  $TMP_SENTSFILE $TMP_PARSEDFILE ;
+  remove_tmp      $TMP_TOKFILE $TMP_INFILE $TMP_SENTSFILE $TMP_TAGGERINFILE $TMP_TAGGEDFILE $TMP_PARSERINFILE $TMP_PARSEDFILE ;
+}
+
+
+PIPE1 ;
+# PIPE2 ;
