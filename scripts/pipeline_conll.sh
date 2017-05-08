@@ -54,12 +54,13 @@ if [[ ! -d "${TMPDIR}" ]]; then
 fi
 
 convert2conll09() {
+  local inputconllfile="${INPUTFILE}"
   local sentsfile="$1";
   local taggerin="$2";
   local lexicon="$3";
 
   local cmd="${SCRIPT_DIR}/prepare_data.py -t totsv \
-      -i ${INPUTFILE} \
+      -i ${inputconllfile} \
       -s ${sentsfile} -o ${taggerin} \
       -c ${lexicon}";
   echo $cmd >&2; 
@@ -201,6 +202,8 @@ function PIPE1 {
 
   local TMP_PARSERINFILE="${TMP_PREFIX}.parsinp.conll09";
   local TMP_PARSEDFILE="${TMP_PREFIX}.parsed.conll09";
+ 
+ 
   convert2conll09 $TMP_SENTSFILE $TMP_TAGGERINFILE $MDL_CLASSES ;
   joint_tagger    $MDL_MTAGGER $MDL_LTAGGER $TMP_TAGGERINFILE $TMP_TAGGEDFILE ;
   add2conll09     $TMP_TAGGEDFILE $TMP_PARSERINFILE ;
@@ -229,6 +232,8 @@ function PIPE2 {
   local TMP_PARSER09INFILE="${TMP_PREFIX}.parsinp.conll09";
   local TMP_PARSER07INFILE="${TMP_PREFIX}.parsinp.conll07";
   local TMP_PARSEDFILE="${TMP_PREFIX}.parsed.conll07";
+  
+  
   convert2conll09 $TMP_SENTSFILE $TMP_TAGGERINFILE $MDL_CLASSES ;
   joint_tagger    $MDL_MTAGGER $MDL_LTAGGER $TMP_TAGGERINFILE $TMP_TAGGEDFILE ;
   add2conll09     $TMP_TAGGEDFILE $TMP_PARSER09INFILE ;
