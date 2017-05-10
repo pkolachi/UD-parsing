@@ -1,9 +1,14 @@
 #!/bin/bash
 
+# TODO
+#   Get this to work with source also
+#   https://superuser.com/questions/176783/what-is-the-difference-between-executing-a-bash-script-vs-sourcing-it
+#   http://stackoverflow.com/questions/9640660/any-way-to-exit-bash-script-but-not-quitting-the-terminal
+
 OS=`uname`
 # Some machines (older OS X, BSD, Windows environments) don't support readlink -e
 if hash readlink 2>/dev/null; then
-  scriptdir=`dirname $0`
+  scriptdir=`dirname "$0"`
 else
   scriptpath=$(readlink -e "$0") || scriptpath=$0
   scriptdir=$(dirname "$scriptpath")

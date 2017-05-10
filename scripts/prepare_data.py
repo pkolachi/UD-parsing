@@ -367,3 +367,5 @@ if __name__ == '__main__':
   elif env.task == 'tokenize':
     prepare_conllinput(inputfile=env.inputfile, \
         outputfile=env.outputfile);
+  else:
+    print("Unknown task specified: {0}".format(env.task), file=stderr);
